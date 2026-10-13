@@ -1,9 +1,11 @@
 # Binaries and build artifacts
+**/bin/
 bin/
 *.o
 *.out
 
 # Data files (runtime databases)
+**/data/*.dat
 data/*.dat
 
 # Editor files
