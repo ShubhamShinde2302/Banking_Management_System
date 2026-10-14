@@ -10,8 +10,8 @@ A multi-client, concurrent banking management system implemented in C using POSI
 
 ## Architecture Overview
 The system follows a Client-Server architecture over TCP sockets where:
-- **Server**: Maintains binary record databases on disk, manages concurrency, handles requests using worker processes/threads, and guarantees ACID properties using `fcntl` record-level locking.
-- **Client**: A responsive terminal CLI allowing authenticated users (Customer, Bank Employee, Manager, Administrator) to interact with the banking backend.
+- **Server**: Maintains binary record databases on disk, manages concurrency using a `fork()`-per-client multi-process model with `SIGCHLD` zombie reaping, and guarantees ACID properties using `fcntl` record-level locking.
+- **Client**: A responsive terminal CLI allowing authenticated users (Customer, Bank Employee, Manager, Administrator) to interact with the banking backend over stream sockets.
 
 ## Project Structure
 ```
@@ -19,13 +19,17 @@ banking-app/
 ├── Makefile                # Build automation
 ├── common/
 │   ├── models.h            # Data structures (User, Account, Transaction, Loan, Feedback)
-│   └── protocol.h          # Request opcodes, response status codes, network packets
+│   ├── protocol.h          # Request opcodes, response status codes, network packets
+│   ├── network.h           # Socket stream transmission definitions
+│   └── network.c           # Low-level exact read/write packet helpers
 ├── server/
-│   ├── main.c              # Server entry point
+│   ├── main.c              # Server entry point, TCP listener & multi-process dispatcher
+│   ├── connection_handler.h# Per-client process request dispatcher declarations
+│   ├── connection_handler.c# Per-client connection loop and request processor
 │   ├── db.h                # POSIX File I/O persistence declarations
 │   └── db.c                # Low-level binary file CRUD operations
 ├── client/
-│   └── main.c              # Client entry point
+│   └── main.c              # Client entry point and socket communication
 ├── scripts/
 │   └── seed_db.c           # Utility to initialize database and seed sample records
 ├── bin/                    # Compiled binaries (server, client, seed_db)
@@ -41,6 +45,17 @@ make
 To initialize and seed the database with initial accounts:
 ```bash
 make seed
+```
+
+## Running the Application
+1. **Start the Banking Server**:
+```bash
+./bin/server [port]       # Defaults to port 8080 if not specified
+```
+
+2. **Start a Client Terminal** (in another terminal):
+```bash
+./bin/client [host] [port] # Defaults to 127.0.0.1:8080
 ```
 
 To clean compiled binaries:
