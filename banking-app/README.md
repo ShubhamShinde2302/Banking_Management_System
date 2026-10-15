@@ -11,6 +11,7 @@ A multi-client, concurrent banking management system implemented in C using POSI
 ## Architecture Overview
 The system follows a Client-Server architecture over TCP sockets where:
 - **Server**: Maintains binary record databases on disk, manages concurrency using a `fork()`-per-client multi-process model with `SIGCHLD` zombie reaping, and guarantees ACID properties using `fcntl` record-level locking.
+- **Locking & Concurrency Subsystem**: Implements granular `fcntl` advisory read/write record locks on accounts, deadlock-free two-phase locking for funds transfer, and strict **single-session enforcement** per user across concurrent terminals.
 - **Client**: A responsive terminal CLI allowing authenticated users (Customer, Bank Employee, Manager, Administrator) to interact with the banking backend over stream sockets.
 
 ## Project Structure
@@ -25,26 +26,34 @@ banking-app/
 ├── server/
 │   ├── main.c              # Server entry point, TCP listener & multi-process dispatcher
 │   ├── connection_handler.h# Per-client process request dispatcher declarations
-│   ├── connection_handler.c# Per-client connection loop and request processor
+│   ├── connection_handler.c# Per-client connection loop and session cleanup
+│   ├── lock.h              # fcntl record locking & single-session manager declarations
+│   ├── lock.c              # Granular record-level locking implementation
 │   ├── db.h                # POSIX File I/O persistence declarations
 │   └── db.c                # Low-level binary file CRUD operations
 ├── client/
 │   └── main.c              # Client entry point and socket communication
 ├── scripts/
-│   └── seed_db.c           # Utility to initialize database and seed sample records
-├── bin/                    # Compiled binaries (server, client, seed_db)
+│   ├── seed_db.c           # Utility to initialize database and seed sample records
+│   └── test_locks.c        # Concurrency & record locking test suite
+├── bin/                    # Compiled binaries (server, client, seed_db, test_locks)
 └── data/                   # Binary database records (*.dat)
 ```
 
-## Compilation & Seeding
-To compile all targets (server, client, database seeder):
+## Compilation & Verification
+To compile all targets:
 ```bash
 make
 ```
 
-To initialize and seed the database with initial accounts:
+To seed initial database records:
 ```bash
 make seed
+```
+
+To run the record-level locking and concurrency verification suite:
+```bash
+make test-locks
 ```
 
 ## Running the Application
