@@ -4,6 +4,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include "server/connection_handler.h"
+#include "server/auth.h"
 #include "server/lock.h"
 #include "server/db.h"
 #include "common/protocol.h"
@@ -33,25 +34,90 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
 
         memset(&res, 0, sizeof(res));
 
-        if (req.opcode == REQ_EXIT) {
-            if (active_user_id > 0 && session_fd >= 0) {
-                release_user_session(active_user_id, session_fd);
-                active_user_id = 0;
-                session_fd = -1;
+        switch (req.opcode) {
+            case REQ_LOGIN: {
+                if (active_user_id > 0) {
+                    res.status_code = RESP_ERR_BAD_REQUEST;
+                    snprintf(res.message, sizeof(res.message),
+                             "Already logged in as User ID %d. Please log out first.", active_user_id);
+                } else {
+                    LoginPayload *login = (LoginPayload *)req.payload;
+                    AuthSuccessPayload auth_info;
+                    int status = auth_login(login, &auth_info, &session_fd, res.message, sizeof(res.message));
+                    res.status_code = status;
+                    if (status == RESP_OK) {
+                        active_user_id = auth_info.user_id;
+                        memcpy(res.payload, &auth_info, sizeof(AuthSuccessPayload));
+                        res.data_len = sizeof(AuthSuccessPayload);
+                        printf("[WORKER %d] Authenticated %s (ID %d, %s)\n",
+                               pid, auth_info.username, auth_info.user_id, role_to_string(auth_info.role));
+                    }
+                }
+                break;
             }
-            res.status_code = RESP_OK;
-            snprintf(res.message, sizeof(res.message), "Session closed. Goodbye!");
-            send_response(client_sock, &res);
-            printf("[WORKER %d] Client %s:%d requested exit.\n", pid, client_ip, client_port);
-            break;
-        }
 
-        /* Generic handler - will be dispatched to role handlers in Day 5+ */
-        printf("[WORKER %d] Received opcode %d from user_id %d\n", pid, req.opcode, req.user_id);
-        res.status_code = RESP_OK;
-        snprintf(res.message, sizeof(res.message), "Server Worker PID %d ready.", pid);
-        snprintf(res.payload, sizeof(res.payload), "ACK: Opcode %d received.", req.opcode);
-        res.data_len = strlen(res.payload);
+            case REQ_LOGOUT: {
+                if (active_user_id == 0) {
+                    res.status_code = RESP_ERR_AUTH_FAILED;
+                    snprintf(res.message, sizeof(res.message), "No active session to log out.");
+                } else {
+                    auth_logout(active_user_id, session_fd);
+                    printf("[WORKER %d] User ID %d logged out.\n", pid, active_user_id);
+                    active_user_id = 0;
+                    session_fd = -1;
+                    res.status_code = RESP_OK;
+                    snprintf(res.message, sizeof(res.message), "Logged out successfully.");
+                }
+                break;
+            }
+
+            case REQ_CHANGE_PASSWORD: {
+                if (active_user_id == 0) {
+                    res.status_code = RESP_ERR_AUTH_FAILED;
+                    snprintf(res.message, sizeof(res.message), "Authentication required to change password.");
+                } else {
+                    ChangePasswordPayload *cp = (ChangePasswordPayload *)req.payload;
+                    int status = auth_change_password(active_user_id, cp, res.message, sizeof(res.message));
+                    res.status_code = status;
+                }
+                break;
+            }
+
+            case REQ_EXIT: {
+                if (active_user_id > 0 && session_fd >= 0) {
+                    auth_logout(active_user_id, session_fd);
+                    active_user_id = 0;
+                    session_fd = -1;
+                }
+                res.status_code = RESP_OK;
+                snprintf(res.message, sizeof(res.message), "Session closed. Goodbye!");
+                send_response(client_sock, &res);
+                printf("[WORKER %d] Client %s:%d requested exit.\n", pid, client_ip, client_port);
+                goto cleanup;
+            }
+
+            case 100: { /* Initial connection probe / ping */
+                res.status_code = RESP_OK;
+                snprintf(res.message, sizeof(res.message), "Server Worker PID %d ready.", pid);
+                snprintf(res.payload, sizeof(res.payload), "ACK: Handshake probe successful.");
+                res.data_len = strlen(res.payload);
+                break;
+            }
+
+            default: {
+                /* Generic handler for role opcodes in Days 6-11 */
+                if (active_user_id == 0) {
+                    res.status_code = RESP_ERR_AUTH_FAILED;
+                    snprintf(res.message, sizeof(res.message), "Authentication required for opcode %d.", req.opcode);
+                } else {
+                    res.status_code = RESP_OK;
+                    snprintf(res.message, sizeof(res.message), "Worker PID %d acknowledged opcode %d.", pid, req.opcode);
+                    snprintf(res.payload, sizeof(res.payload), "ACK: User ID %d dispatched opcode %d.", active_user_id, req.opcode);
+                    res.data_len = strlen(res.payload);
+                }
+                break;
+            }
+        }
 
         if (send_response(client_sock, &res) < 0) {
             printf("[WORKER %d] Failed to send response to %s:%d\n", pid, client_ip, client_port);
@@ -59,9 +125,10 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
         }
     }
 
+cleanup:
     /* Safety clean-up on exit or abrupt crash */
     if (active_user_id > 0 && session_fd >= 0) {
-        release_user_session(active_user_id, session_fd);
+        auth_logout(active_user_id, session_fd);
     }
 
     close(client_sock);

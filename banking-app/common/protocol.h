@@ -75,4 +75,24 @@ typedef struct {
     char payload[PAYLOAD_SIZE];     /* Payload response data */
 } ResponsePacket;
 
+/* Authentication & Session Payloads */
+typedef struct {
+    char username[64];
+    char password[64];
+} LoginPayload;
+
+typedef struct {
+    char old_password[64];
+    char new_password[64];
+} ChangePasswordPayload;
+
+typedef struct {
+    int user_id;
+    int role;
+    int account_id;
+    char username[64];
+    char customer_name[64];
+    double balance;
+} AuthSuccessPayload;
+
 #endif /* PROTOCOL_H */

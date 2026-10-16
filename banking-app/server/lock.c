@@ -1,9 +1,17 @@
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include "server/lock.h"
+
+#ifndef F_OFD_SETLK
+#define F_OFD_SETLK 37
+#endif
+#ifndef F_OFD_SETLKW
+#define F_OFD_SETLKW 38
+#endif
 
 /* Low-level fcntl record lock helper */
 int set_record_lock(int fd, int lock_type, off_t offset, off_t length, int blocking) {
@@ -15,7 +23,6 @@ int set_record_lock(int fd, int lock_type, off_t offset, off_t length, int block
     fl.l_whence = SEEK_SET;
     fl.l_start = offset;
     fl.l_len = length;
-    fl.l_pid = getpid();
 
     switch (lock_type) {
         case LOCK_READ:
@@ -31,7 +38,13 @@ int set_record_lock(int fd, int lock_type, off_t offset, off_t length, int block
             return -1;
     }
 
+#if defined(F_OFD_SETLK)
+    fl.l_pid = 0;
+    int cmd = blocking ? F_OFD_SETLKW : F_OFD_SETLK;
+#else
+    fl.l_pid = getpid();
     int cmd = blocking ? F_SETLKW : F_SETLK;
+#endif
     return fcntl(fd, cmd, &fl);
 }
 

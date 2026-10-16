@@ -12,7 +12,8 @@ A multi-client, concurrent banking management system implemented in C using POSI
 The system follows a Client-Server architecture over TCP sockets where:
 - **Server**: Maintains binary record databases on disk, manages concurrency using a `fork()`-per-client multi-process model with `SIGCHLD` zombie reaping, and guarantees ACID properties using `fcntl` record-level locking.
 - **Locking & Concurrency Subsystem**: Implements granular `fcntl` advisory read/write record locks on accounts, deadlock-free two-phase locking for funds transfer, and strict **single-session enforcement** per user across concurrent terminals.
-- **Client**: A responsive terminal CLI allowing authenticated users (Customer, Bank Employee, Manager, Administrator) to interact with the banking backend over stream sockets.
+- **Authentication & Session Handshake Subsystem**: Multi-role user authentication (Customer, Bank Employee, Manager, Administrator), single-session validation, dynamic session tracking, password changes, and clean session release on exit or client crash.
+- **Client**: A responsive terminal CLI allowing authenticated users to log in, view account profiles, change passwords, and interact with the banking backend over stream sockets.
 
 ## Project Structure
 ```
@@ -20,23 +21,26 @@ banking-app/
 ├── Makefile                # Build automation
 ├── common/
 │   ├── models.h            # Data structures (User, Account, Transaction, Loan, Feedback)
-│   ├── protocol.h          # Request opcodes, response status codes, network packets
+│   ├── protocol.h          # Request opcodes, response status codes, payload structs
 │   ├── network.h           # Socket stream transmission definitions
 │   └── network.c           # Low-level exact read/write packet helpers
 ├── server/
 │   ├── main.c              # Server entry point, TCP listener & multi-process dispatcher
 │   ├── connection_handler.h# Per-client process request dispatcher declarations
 │   ├── connection_handler.c# Per-client connection loop and session cleanup
+│   ├── auth.h              # Authentication and session manager declarations
+│   ├── auth.c              # Multi-role authentication & password change logic
 │   ├── lock.h              # fcntl record locking & single-session manager declarations
 │   ├── lock.c              # Granular record-level locking implementation
 │   ├── db.h                # POSIX File I/O persistence declarations
 │   └── db.c                # Low-level binary file CRUD operations
 ├── client/
-│   └── main.c              # Client entry point and socket communication
+│   └── main.c              # Client entry point and interactive auth CLI
 ├── scripts/
 │   ├── seed_db.c           # Utility to initialize database and seed sample records
-│   └── test_locks.c        # Concurrency & record locking test suite
-├── bin/                    # Compiled binaries (server, client, seed_db, test_locks)
+│   ├── test_locks.c        # Concurrency & record locking test suite
+│   └── test_auth.c         # End-to-end multi-process authentication test suite
+├── bin/                    # Compiled binaries (server, client, seed_db, test_locks, test_auth)
 └── data/                   # Binary database records (*.dat)
 ```
 
@@ -54,6 +58,11 @@ make seed
 To run the record-level locking and concurrency verification suite:
 ```bash
 make test-locks
+```
+
+To run the multi-process authentication & session handshake verification suite:
+```bash
+make test-auth
 ```
 
 ## Running the Application

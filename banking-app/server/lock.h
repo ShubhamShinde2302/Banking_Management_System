@@ -7,6 +7,17 @@
 #include "common/models.h"
 #include "server/db.h"
 
+/* Undefine conflicting glibc macros if present */
+#ifdef LOCK_READ
+#undef LOCK_READ
+#endif
+#ifdef LOCK_WRITE
+#undef LOCK_WRITE
+#endif
+#ifdef LOCK_UNLOCK
+#undef LOCK_UNLOCK
+#endif
+
 /* Record lock types */
 typedef enum {
     LOCK_READ,
