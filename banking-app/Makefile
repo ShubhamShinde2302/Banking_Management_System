@@ -9,11 +9,12 @@ CLIENT_BIN = $(BIN_DIR)/client
 SEED_BIN   = $(BIN_DIR)/seed_db
 TEST_LOCKS = $(BIN_DIR)/test_locks
 TEST_AUTH  = $(BIN_DIR)/test_auth
+TEST_CUST  = $(BIN_DIR)/test_customer
 
 OBJS_COMMON = $(BIN_DIR)/network.o
-OBJS_SERVER = $(BIN_DIR)/db.o $(BIN_DIR)/lock.o $(BIN_DIR)/auth.o $(BIN_DIR)/connection_handler.o
+OBJS_SERVER = $(BIN_DIR)/db.o $(BIN_DIR)/lock.o $(BIN_DIR)/auth.o $(BIN_DIR)/customer_ops.o $(BIN_DIR)/connection_handler.o
 
-all: directories $(SERVER_BIN) $(CLIENT_BIN) $(SEED_BIN) $(TEST_LOCKS) $(TEST_AUTH)
+all: directories $(SERVER_BIN) $(CLIENT_BIN) $(SEED_BIN) $(TEST_LOCKS) $(TEST_AUTH) $(TEST_CUST)
 
 directories:
 	@mkdir -p $(BIN_DIR)
@@ -33,7 +34,10 @@ $(BIN_DIR)/lock.o: server/lock.c server/lock.h server/db.h common/models.h
 $(BIN_DIR)/auth.o: server/auth.c server/auth.h server/db.h server/lock.h common/models.h common/protocol.h
 	$(CC) $(CFLAGS) -c server/auth.c -o $(BIN_DIR)/auth.o
 
-$(BIN_DIR)/connection_handler.o: server/connection_handler.c server/connection_handler.h server/auth.h server/lock.h common/protocol.h common/network.h
+$(BIN_DIR)/customer_ops.o: server/customer_ops.c server/customer_ops.h server/db.h server/lock.h common/models.h common/protocol.h
+	$(CC) $(CFLAGS) -c server/customer_ops.c -o $(BIN_DIR)/customer_ops.o
+
+$(BIN_DIR)/connection_handler.o: server/connection_handler.c server/connection_handler.h server/auth.h server/customer_ops.h server/lock.h common/protocol.h common/network.h
 	$(CC) $(CFLAGS) -c server/connection_handler.c -o $(BIN_DIR)/connection_handler.o
 
 # Binaries
@@ -52,6 +56,9 @@ $(TEST_LOCKS): scripts/test_locks.c $(BIN_DIR)/db.o $(BIN_DIR)/lock.o common/mod
 $(TEST_AUTH): scripts/test_auth.c $(OBJS_COMMON) $(OBJS_SERVER) common/models.h common/protocol.h
 	$(CC) $(CFLAGS) scripts/test_auth.c $(OBJS_COMMON) $(OBJS_SERVER) -o $(TEST_AUTH)
 
+$(TEST_CUST): scripts/test_customer.c $(OBJS_COMMON) $(OBJS_SERVER) common/models.h common/protocol.h
+	$(CC) $(CFLAGS) scripts/test_customer.c $(OBJS_COMMON) $(OBJS_SERVER) -o $(TEST_CUST)
+
 seed: directories $(SEED_BIN)
 	@./$(SEED_BIN)
 
@@ -61,10 +68,13 @@ test-locks: directories $(TEST_LOCKS)
 test-auth: directories $(TEST_AUTH)
 	@./$(TEST_AUTH)
 
+test-customer: directories $(TEST_CUST)
+	@./$(TEST_CUST)
+
 clean:
 	rm -rf $(BIN_DIR)
 
 clean-data:
 	rm -f $(DATA_DIR)/*.dat
 
-.PHONY: all directories clean clean-data seed test-locks test-auth
+.PHONY: all directories clean clean-data seed test-locks test-auth test-customer

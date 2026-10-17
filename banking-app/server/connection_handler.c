@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include "server/connection_handler.h"
 #include "server/auth.h"
+#include "server/customer_ops.h"
 #include "server/lock.h"
 #include "server/db.h"
 #include "common/protocol.h"
@@ -19,6 +20,8 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
     printf("[WORKER %d] Handling connection from %s:%d\n", pid, client_ip, client_port);
 
     int active_user_id = 0;
+    int active_role = 0;
+    int active_account_id = 0;
     int session_fd = -1;
 
     RequestPacket req;
@@ -47,10 +50,13 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
                     res.status_code = status;
                     if (status == RESP_OK) {
                         active_user_id = auth_info.user_id;
+                        active_role = auth_info.role;
+                        active_account_id = auth_info.account_id;
                         memcpy(res.payload, &auth_info, sizeof(AuthSuccessPayload));
                         res.data_len = sizeof(AuthSuccessPayload);
-                        printf("[WORKER %d] Authenticated %s (ID %d, %s)\n",
-                               pid, auth_info.username, auth_info.user_id, role_to_string(auth_info.role));
+                        printf("[WORKER %d] Authenticated %s (ID %d, %s, Acc %d)\n",
+                               pid, auth_info.username, auth_info.user_id,
+                               role_to_string(auth_info.role), auth_info.account_id);
                     }
                 }
                 break;
@@ -64,6 +70,8 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
                     auth_logout(active_user_id, session_fd);
                     printf("[WORKER %d] User ID %d logged out.\n", pid, active_user_id);
                     active_user_id = 0;
+                    active_role = 0;
+                    active_account_id = 0;
                     session_fd = -1;
                     res.status_code = RESP_OK;
                     snprintf(res.message, sizeof(res.message), "Logged out successfully.");
@@ -83,10 +91,82 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
                 break;
             }
 
+            /* ==================== CUSTOMER OPERATIONS (DAY 6) ==================== */
+            case REQ_CUST_VIEW_BALANCE: {
+                if (active_user_id == 0) {
+                    res.status_code = RESP_ERR_AUTH_FAILED;
+                    snprintf(res.message, sizeof(res.message), "Authentication required to view balance.");
+                } else if (active_role != ROLE_CUSTOMER) {
+                    res.status_code = RESP_ERR_UNAUTHORIZED;
+                    snprintf(res.message, sizeof(res.message), "Unauthorized: Customer role required.");
+                } else {
+                    BalancePayload bal;
+                    memset(&bal, 0, sizeof(bal));
+                    int status = customer_get_balance(active_user_id, active_account_id, &bal,
+                                                      res.message, sizeof(res.message));
+                    res.status_code = status;
+                    if (status == RESP_OK) {
+                        memcpy(res.payload, &bal, sizeof(BalancePayload));
+                        res.data_len = sizeof(BalancePayload);
+                    }
+                }
+                break;
+            }
+
+            case REQ_CUST_DEPOSIT: {
+                if (active_user_id == 0) {
+                    res.status_code = RESP_ERR_AUTH_FAILED;
+                    snprintf(res.message, sizeof(res.message), "Authentication required to deposit funds.");
+                } else if (active_role != ROLE_CUSTOMER) {
+                    res.status_code = RESP_ERR_UNAUTHORIZED;
+                    snprintf(res.message, sizeof(res.message), "Unauthorized: Customer role required.");
+                } else {
+                    AmountPayload *ap = (AmountPayload *)req.payload;
+                    TransactionResultPayload txn_res;
+                    memset(&txn_res, 0, sizeof(txn_res));
+                    int status = customer_deposit(active_user_id, active_account_id, ap->amount,
+                                                 &txn_res, res.message, sizeof(res.message));
+                    res.status_code = status;
+                    if (status == RESP_OK) {
+                        memcpy(res.payload, &txn_res, sizeof(TransactionResultPayload));
+                        res.data_len = sizeof(TransactionResultPayload);
+                        printf("[WORKER %d] Deposit of $%.2f to Acc %d completed (Txn ID: %d)\n",
+                               pid, ap->amount, active_account_id, txn_res.transaction_id);
+                    }
+                }
+                break;
+            }
+
+            case REQ_CUST_WITHDRAW: {
+                if (active_user_id == 0) {
+                    res.status_code = RESP_ERR_AUTH_FAILED;
+                    snprintf(res.message, sizeof(res.message), "Authentication required to withdraw funds.");
+                } else if (active_role != ROLE_CUSTOMER) {
+                    res.status_code = RESP_ERR_UNAUTHORIZED;
+                    snprintf(res.message, sizeof(res.message), "Unauthorized: Customer role required.");
+                } else {
+                    AmountPayload *ap = (AmountPayload *)req.payload;
+                    TransactionResultPayload txn_res;
+                    memset(&txn_res, 0, sizeof(txn_res));
+                    int status = customer_withdraw(active_user_id, active_account_id, ap->amount,
+                                                  &txn_res, res.message, sizeof(res.message));
+                    res.status_code = status;
+                    if (status == RESP_OK) {
+                        memcpy(res.payload, &txn_res, sizeof(TransactionResultPayload));
+                        res.data_len = sizeof(TransactionResultPayload);
+                        printf("[WORKER %d] Withdrawal of $%.2f from Acc %d completed (Txn ID: %d)\n",
+                               pid, ap->amount, active_account_id, txn_res.transaction_id);
+                    }
+                }
+                break;
+            }
+
             case REQ_EXIT: {
                 if (active_user_id > 0 && session_fd >= 0) {
                     auth_logout(active_user_id, session_fd);
                     active_user_id = 0;
+                    active_role = 0;
+                    active_account_id = 0;
                     session_fd = -1;
                 }
                 res.status_code = RESP_OK;
@@ -105,7 +185,7 @@ void handle_client(int client_sock, struct sockaddr_in client_addr) {
             }
 
             default: {
-                /* Generic handler for role opcodes in Days 6-11 */
+                /* Generic handler for role opcodes in Days 7-11 */
                 if (active_user_id == 0) {
                     res.status_code = RESP_ERR_AUTH_FAILED;
                     snprintf(res.message, sizeof(res.message), "Authentication required for opcode %d.", req.opcode);

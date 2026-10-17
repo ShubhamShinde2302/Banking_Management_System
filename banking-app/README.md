@@ -13,7 +13,8 @@ The system follows a Client-Server architecture over TCP sockets where:
 - **Server**: Maintains binary record databases on disk, manages concurrency using a `fork()`-per-client multi-process model with `SIGCHLD` zombie reaping, and guarantees ACID properties using `fcntl` record-level locking.
 - **Locking & Concurrency Subsystem**: Implements granular `fcntl` advisory read/write record locks on accounts, deadlock-free two-phase locking for funds transfer, and strict **single-session enforcement** per user across concurrent terminals.
 - **Authentication & Session Handshake Subsystem**: Multi-role user authentication (Customer, Bank Employee, Manager, Administrator), single-session validation, dynamic session tracking, password changes, and clean session release on exit or client crash.
-- **Client**: A responsive terminal CLI allowing authenticated users to log in, view account profiles, change passwords, and interact with the banking backend over stream sockets.
+- **Customer Funds Subsystem**: Live account balance queries with shared `fcntl` read locks, deposit and withdrawal operations with exclusive write locks, ACID persistence (`fsync`), overdraft protection, and automatic transaction ledger generation.
+- **Client**: A responsive terminal CLI allowing authenticated users to log in, view account profiles, change passwords, deposit/withdraw funds, and interact with the banking backend over stream sockets.
 
 ## Project Structure
 ```
@@ -30,17 +31,20 @@ banking-app/
 │   ├── connection_handler.c# Per-client connection loop and session cleanup
 │   ├── auth.h              # Authentication and session manager declarations
 │   ├── auth.c              # Multi-role authentication & password change logic
+│   ├── customer_ops.h      # Customer balance, deposit, withdraw declarations
+│   ├── customer_ops.c      # Customer funds operations with fcntl record locks
 │   ├── lock.h              # fcntl record locking & single-session manager declarations
 │   ├── lock.c              # Granular record-level locking implementation
 │   ├── db.h                # POSIX File I/O persistence declarations
 │   └── db.c                # Low-level binary file CRUD operations
 ├── client/
-│   └── main.c              # Client entry point and interactive auth CLI
+│   └── main.c              # Client entry point with Customer & Staff portals
 ├── scripts/
 │   ├── seed_db.c           # Utility to initialize database and seed sample records
 │   ├── test_locks.c        # Concurrency & record locking test suite
-│   └── test_auth.c         # End-to-end multi-process authentication test suite
-├── bin/                    # Compiled binaries (server, client, seed_db, test_locks, test_auth)
+│   ├── test_auth.c         # End-to-end multi-process authentication test suite
+│   └── test_customer.c     # Customer funds & ACID concurrency stress test suite
+├── bin/                    # Compiled binaries (server, client, seed_db, test_locks, test_auth, test_customer)
 └── data/                   # Binary database records (*.dat)
 ```
 
@@ -63,6 +67,11 @@ make test-locks
 To run the multi-process authentication & session handshake verification suite:
 ```bash
 make test-auth
+```
+
+To run the customer funds & ACID concurrency verification suite:
+```bash
+make test-customer
 ```
 
 ## Running the Application

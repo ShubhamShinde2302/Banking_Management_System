@@ -1,6 +1,9 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
+#include <time.h>
+#include <sys/types.h>
+
 #define DEFAULT_PORT    8080
 #define DEFAULT_HOST    "127.0.0.1"
 #define PAYLOAD_SIZE    2048
@@ -94,5 +97,25 @@ typedef struct {
     char customer_name[64];
     double balance;
 } AuthSuccessPayload;
+
+/* Customer Funds Payloads */
+typedef struct {
+    double amount;
+} AmountPayload;
+
+typedef struct {
+    int account_id;
+    double balance;
+    int is_active;
+    char customer_name[64];
+} BalancePayload;
+
+typedef struct {
+    int transaction_id;
+    int account_id;
+    double amount;
+    double balance_after;
+    time_t timestamp;
+} TransactionResultPayload;
 
 #endif /* PROTOCOL_H */
