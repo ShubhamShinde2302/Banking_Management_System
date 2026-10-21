@@ -98,6 +98,8 @@ typedef struct {
     double balance;
 } AuthSuccessPayload;
 
+#include "common/models.h"
+
 /* Customer Funds Payloads */
 typedef struct {
     double amount;
@@ -117,5 +119,45 @@ typedef struct {
     double balance_after;
     time_t timestamp;
 } TransactionResultPayload;
+
+/* Customer Transfer & Passbook Payloads (Day 7) */
+typedef struct {
+    int target_account_id;
+    double amount;
+} TransferPayload;
+
+typedef struct {
+    int debit_txn_id;
+    int credit_txn_id;
+    int source_account_id;
+    int target_account_id;
+    double amount;
+    double balance_after;
+    time_t timestamp;
+} TransferResultPayload;
+
+#define MAX_PASSBOOK_ENTRIES 10
+
+typedef struct {
+    int count;
+    TransactionRecord records[MAX_PASSBOOK_ENTRIES];
+} PassbookPayload;
+
+
+/* Employee, manager and administrator payloads */
+typedef struct { char username[64]; char password[64]; char customer_name[64]; double opening_balance; } CreateCustomerPayload;
+typedef struct { int user_id; char customer_name[64]; } ModifyCustomerPayload;
+typedef struct { double amount; char reason[128]; } LoanApplicationPayload;
+typedef struct { char message[256]; } FeedbackPayload;
+typedef struct { int loan_id; int approve; char remarks[128]; } ProcessLoanPayload;
+typedef struct { int account_id; int active; } AccountStatusPayload;
+typedef struct { int loan_id; int employee_id; } AssignLoanPayload;
+typedef struct { int user_id; char username[64]; char customer_name[64]; } ModifyUserPayload;
+typedef struct { int user_id; int role; } ManageRolePayload;
+typedef struct { int count; UserRecord users[10]; } UserListPayload;
+typedef struct { int count; LoanRecord loans[5]; } LoanListPayload;
+typedef struct { int count; FeedbackRecord feedback[6]; } FeedbackListPayload;
+typedef struct { int count; TransactionRecord records[MAX_PASSBOOK_ENTRIES]; } CustomerTransactionsPayload;
+typedef struct { int count; UserRecord employees[10]; } EmployeeListPayload;
 
 #endif /* PROTOCOL_H */

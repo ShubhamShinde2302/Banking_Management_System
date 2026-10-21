@@ -28,4 +28,20 @@ int customer_withdraw(int user_id,
                       char *msg_out,
                       size_t msg_len);
 
+/* Atomic funds transfer between accounts with two-phase deadlock-free locking */
+int customer_transfer(int user_id,
+                      int source_account_id,
+                      int target_account_id,
+                      double amount,
+                      TransferResultPayload *out_res,
+                      char *msg_out,
+                      size_t msg_len);
+
+/* View passbook / recent transaction ledger entries for an account */
+int customer_get_passbook(int user_id,
+                          int account_id,
+                          PassbookPayload *out_passbook,
+                          char *msg_out,
+                          size_t msg_len);
+
 #endif /* CUSTOMER_OPS_H */

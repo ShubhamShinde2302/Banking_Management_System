@@ -7,13 +7,18 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <semaphore.h>
+#include <pthread.h>
 
 #include "common/models.h"
 #include "common/protocol.h"
 #include "server/db.h"
 #include "server/connection_handler.h"
+
+extern sem_t *client_slots;
 
 /* Signal handler to reap zombie child processes */
 static void sigchld_handler(int sig) {
@@ -21,6 +26,17 @@ static void sigchld_handler(int sig) {
     int saved_errno = errno;
     while (waitpid(-1, NULL, WNOHANG) > 0);
     errno = saved_errno;
+}
+
+typedef struct { int client_sock; struct sockaddr_in client_addr; } ClientThreadArgs;
+
+static void *client_worker(void *arg) {
+    ClientThreadArgs *ctx = (ClientThreadArgs *)arg;
+    int fd = ctx->client_sock;
+    struct sockaddr_in addr = ctx->client_addr;
+    free(ctx);
+    handle_client(fd, addr);
+    return NULL;
 }
 
 int main(int argc, char *argv[]) {
@@ -36,6 +52,11 @@ int main(int argc, char *argv[]) {
     printf("=====================================================\n");
     printf("   Banking Management System - Server Daemon         \n");
     printf("=====================================================\n");
+
+    /* A named POSIX semaphore caps the number of simultaneous client workers. */
+    sem_unlink("/banking_management_client_slots");
+    client_slots = sem_open("/banking_management_client_slots", O_CREAT | O_EXCL, 0600, 16);
+    if (client_slots == SEM_FAILED) { perror("sem_open"); return EXIT_FAILURE; }
 
     /* Ensure database files exist */
     if (db_init() != 0) {
@@ -90,7 +111,7 @@ int main(int argc, char *argv[]) {
     }
 
     printf("[+] Banking Server listening on 0.0.0.0:%d\n", port);
-    printf("[+] Multi-process concurrency enabled (fork-per-client model).\n");
+    printf("[+] Multi-process + worker-thread client handling enabled.\n");
     printf("[*] Ready for client connections. Press Ctrl+C to stop.\n\n");
 
     /* Main Connection Loop */
@@ -107,25 +128,37 @@ int main(int argc, char *argv[]) {
             continue;
         }
 
+        /* Wait for a free worker slot before spawning a client process. */
+        while (sem_wait(client_slots) < 0 && errno == EINTR) { }
         /* Spawn a dedicated child process for the connected client */
         pid_t pid = fork();
         if (pid < 0) {
             perror("Error forking child process");
+            sem_post(client_slots);
             close(client_sock);
             continue;
         }
 
         if (pid == 0) {
-            /* Child Process: Close listening socket and serve client */
+            /* Child process isolates each client; a worker thread handles its socket. */
             close(server_sock);
-            handle_client(client_sock, client_addr);
-            exit(0);
+            ClientThreadArgs *ctx = malloc(sizeof(*ctx));
+            if (!ctx) { close(client_sock); sem_post(client_slots); _exit(EXIT_FAILURE); }
+            ctx->client_sock = client_sock;
+            ctx->client_addr = client_addr;
+            pthread_t worker;
+            int err = pthread_create(&worker, NULL, client_worker, ctx);
+            if (err != 0) { perror("pthread_create"); free(ctx); close(client_sock); sem_post(client_slots); _exit(EXIT_FAILURE); }
+            pthread_join(worker, NULL);
+            _exit(EXIT_SUCCESS);
         } else {
-            /* Parent Process: Close accepted socket descriptor and continue listening */
+            /* Parent closes its accepted socket and continues listening. */
             close(client_sock);
         }
     }
 
     close(server_sock);
+    sem_close(client_slots);
+    sem_unlink("/banking_management_client_slots");
     return 0;
 }

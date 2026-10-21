@@ -10,11 +10,12 @@ SEED_BIN   = $(BIN_DIR)/seed_db
 TEST_LOCKS = $(BIN_DIR)/test_locks
 TEST_AUTH  = $(BIN_DIR)/test_auth
 TEST_CUST  = $(BIN_DIR)/test_customer
+TEST_XFER  = $(BIN_DIR)/test_transfers
 
 OBJS_COMMON = $(BIN_DIR)/network.o
 OBJS_SERVER = $(BIN_DIR)/db.o $(BIN_DIR)/lock.o $(BIN_DIR)/auth.o $(BIN_DIR)/customer_ops.o $(BIN_DIR)/connection_handler.o
 
-all: directories $(SERVER_BIN) $(CLIENT_BIN) $(SEED_BIN) $(TEST_LOCKS) $(TEST_AUTH) $(TEST_CUST)
+all: directories $(SERVER_BIN) $(CLIENT_BIN) $(SEED_BIN) $(TEST_LOCKS) $(TEST_AUTH) $(TEST_CUST) $(TEST_XFER)
 
 directories:
 	@mkdir -p $(BIN_DIR)
@@ -59,6 +60,9 @@ $(TEST_AUTH): scripts/test_auth.c $(OBJS_COMMON) $(OBJS_SERVER) common/models.h 
 $(TEST_CUST): scripts/test_customer.c $(OBJS_COMMON) $(OBJS_SERVER) common/models.h common/protocol.h
 	$(CC) $(CFLAGS) scripts/test_customer.c $(OBJS_COMMON) $(OBJS_SERVER) -o $(TEST_CUST)
 
+$(TEST_XFER): scripts/test_transfers.c $(OBJS_COMMON) $(OBJS_SERVER) common/models.h common/protocol.h
+	$(CC) $(CFLAGS) scripts/test_transfers.c $(OBJS_COMMON) $(OBJS_SERVER) -o $(TEST_XFER)
+
 seed: directories $(SEED_BIN)
 	@./$(SEED_BIN)
 
@@ -71,10 +75,13 @@ test-auth: directories $(TEST_AUTH)
 test-customer: directories $(TEST_CUST)
 	@./$(TEST_CUST)
 
+test-transfers: directories $(TEST_XFER)
+	@./$(TEST_XFER)
+
 clean:
 	rm -rf $(BIN_DIR)
 
 clean-data:
 	rm -f $(DATA_DIR)/*.dat
 
-.PHONY: all directories clean clean-data seed test-locks test-auth test-customer
+.PHONY: all directories clean clean-data seed test-locks test-auth test-customer test-transfers
